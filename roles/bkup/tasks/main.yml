@@ -1,0 +1,39 @@
+---
+# tasks file for journald
+- name:     Install borg_backup
+  yum:      name=borgbackup state=present
+- name:     Replace configuration file
+  template:
+    src:    backup.sh.j2
+    dest:   /root/backup.sh
+    mode:   0755
+- name:     Install sshpass
+  yum:      name=sshpass state=latest
+- name:     Copy logrotate file
+  copy:     src=borg_backup.conf dest=/etc/logrotate.d/borg_backup.conf
+- name:     Add cron job for remote backup
+  cron:
+    name:   daily-backup
+    hour:   "1"
+    minute: "0"
+    job:    /root/backup.sh
+    user:   root
+- name:     Check ssh key
+  stat:     path=~/.ssh/id_rsa
+  register: ssh
+- name:     Create ssh key
+  command:  ssh-keygen -b 2048 -t rsa -q -N '' -f ~/.ssh/id_rsa
+  when:     ssh.stat.exists==False
+- name:     Copy ssh key to borg server
+  command:  sshpass -ppassword ssh-copy-id -o StrictHostKeyChecking=no borguser@192.168.110.104
+  when:     ssh.stat.exists==False
+- name:     Create /var/backup
+  file:     name=/var/backup state=directory
+- name:     Check repository
+  stat:     path=/var/backup/repo.flg
+  register: repo
+- file:     path=/var/backup/repo.flg state=touch
+  when:     repo.stat.exists==False
+- name:     Create repository
+  command:  borg init -e none borguser@192.168.110.104:/var/backup/{{ inventory_hostname }}
+  when:     repo.stat.exists==False

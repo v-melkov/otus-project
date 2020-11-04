@@ -1,0 +1,104 @@
+---
+# Apache and php
+- name:           install apache web server
+  yum:            name=httpd state=present
+- name:           install php-fpm
+  yum:            name=php-fpm state=present
+- name:           Install php72 repository
+  yum:            name='http://rpms.remirepo.net/enterprise/remi-release-7.rpm' state=present
+- name:           Install php72 modules
+  yum:
+    enablerepo:   'remi-php72'
+    name:         ['php-cli', 'php-mysql', 'php-json', 'php-opcache', 'php-mbstring', 'php-xml', 'php-gd', 'php-curl', 'python2-cryptography']
+    state:        present
+    update_cache: yes
+- name:           change apache listen port
+  lineinfile:
+    path:         /etc/httpd/conf/httpd.conf
+    regexp:       '^Listen '
+    insertafter:  '^#Listen '
+    line:         Listen 8080
+- name:           create directory for site
+  file:
+    name:         /var/www/html/otus-project.local/
+    state:        directory
+    owner:        apache
+    group:        apache
+- name:           create directory for site's logs
+  file:
+    name:         /var/www/html/otus-project.local/log
+    state:        directory
+    owner:        apache
+    group:        apache
+- name:           copy conf file for site
+  copy:           src=otus-project.local.conf dest=/etc/httpd/conf.d/otus-project.local.conf
+- name:           allow apache to listen on tcp port 8080
+  seport:
+    ports:        8080
+    proto:        tcp
+    setype:       http_port_t
+    state:        present
+- name:           conf file for php-fpm
+  copy:           src=php-fpm.conf dest=/etc/php-fpm.d/www.conf
+- name:           conf file for apache php
+  copy:           src=php.conf dest=/etc/httpd/conf.d/php.conf
+- name:           copy conf file for mpm
+  copy:           src=00-mpm.conf dest=/etc/httpd/conf.modules.d/00-mpm.conf
+
+
+# install WordPress
+- name:           Detect wp install
+  stat:           path=/var/www/html/otus-project.local/wordpress/wp-config.php
+  register:       wp
+- name:           Create directory for WordPress
+  file:           path=/var/www/html/otus-project.local state=directory
+  when:           wp.stat.exists==False
+- name:           Download WordPress
+  get_url:        url=https://wordpress.org/latest.tar.gz dest=/tmp/wordpress.tar.gz validate_certs=no
+  when:           wp.stat.exists==False
+- name:           Extract WordPress
+  unarchive:      src=/tmp/wordpress.tar.gz dest=/var/www/html/otus-project.local/ copy=no owner=apache group=apache setype=httpd_sys_content_t
+  when:           wp.stat.exists==False
+
+# Selinux
+- name:           Selinux
+  sefcontext:     target='/var/www/html/otus-project.local/wordpress/wp-content(/.*)?' setype=httpd_sys_rw_content_t state=present
+- sefcontext:     target='/var/www/html/otus-project.local/log(/.*)?' setype=httpd_log_t state=present
+- name:           Copy wp config file
+  copy:           src=files/wp-config.php dest=/var/www/html/otus-project.local/wordpress/wp-config.php owner=apache group=apache setype=httpd_sys_rw_content_t
+  when:           wp.stat.exists==False
+- name:           Apply new SELinux file context to filesystem
+  command:        restorecon -irv /var/www/html/otus-project.local/wordpress
+- name:           Set httpd_can_network_connect flag on and keep it persistent across reboots
+  seboolean:      name=httpd_can_network_connect state=yes persistent=yes
+- name:           Set httpd_can_network_connect_db flag on and keep it persistent across reboots
+  seboolean:      name=httpd_can_network_connect_db state=yes persistent=yes
+- name:           Set httpd_unnified flag
+  seboolean:      name=httpd_unified state=yes persistent=yes
+
+# start services
+- name:           start apache
+  service:        name=httpd state=started enabled=yes
+- name:           start php-fpm
+  service:        name=php-fpm state=started enabled=yes
+# network
+- name:           add route to frontend
+  copy:           src=route-eth1 dest=/etc/sysconfig/network-scripts/route-eth1
+
+# firewall
+- name:           add port 8080
+  firewalld:
+    zone:         internal
+    port:         8080/tcp
+    permanent:    yes
+    state:        enabled
+    immediate:    yes
+
+# backup
+- name:           Cron job for backup html directory
+  cron:
+    name:         html backup
+    hour:         "23"
+    minute:       "0"
+    user:         root
+    job:          rsync -r /var/www/html/otus-project.local/ /var/backup/

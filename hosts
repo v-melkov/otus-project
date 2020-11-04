@@ -1,0 +1,11 @@
+[dbs]
+mysql ansible_host=192.168.110.136 ansible_ssh_port=22 ansible_user=vagrant ansible_private_key_file=.vagrant/machines/mysql/virtualbox/private_key
+[webs]
+apache ansible_host=192.168.110.102 ansible_ssh_port=22 ansible_user=vagrant ansible_private_key_file=.vagrant/machines/apache/virtualbox/private_key
+[logs]
+log ansible_host=192.168.110.103 ansible_ssh_port=22 ansible_user=vagrant ansible_private_key_file=.vagrant/machines/log/virtualbox/private_key
+[firewalls]
+firewall ansible_host=192.168.110.100 ansible_ssh_port=22 ansible_user=vagrant ansible_private_key_file=.vagrant/machines/firewall/virtualbox/private_key
+[other]
+backup ansible_host=192.168.110.104 ansible_ssh_port=22 ansible_user=vagrant ansible_private_key_file=.vagrant/machines/backup/virtualbox/private_key
+frontend ansible_host=192.168.110.105 ansible_ssh_port=22 ansible_user=vagrant ansible_private_key_file=.vagrant/machines/frontend/virtualbox/private_key

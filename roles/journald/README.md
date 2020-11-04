@@ -1,0 +1,3 @@
+# Journald
+
+Configure remote journald

@@ -1,0 +1,24 @@
+---
+- name:        Disable default route (vagrant)
+  lineinfile:
+    path:      /etc/sysconfig/network-scripts/ifcfg-eth0
+    line:      "DEFROUTE=no"
+  notify:      restart network
+- name:        Add default route
+  lineinfile:
+    path:      /etc/sysconfig/network-scripts/ifcfg-eth1
+    line:      "GATEWAY=192.168.110.100"
+  notify:      restart network
+- name:        Restart network (vagrant bug)
+  service:     name=network state=restarted
+- name:        Start firewalld
+  service:     name=firewalld enabled=yes state=started
+- name:        Set internal as default policy
+  command:     firewall-cmd --set-default-zone=internal
+- name:        enable remote logging
+  firewalld:
+    zone:      internal
+    port:      "19532/tcp"
+    permanent: yes
+    state:     enabled
+    immediate: yes

@@ -1,0 +1,15 @@
+---
+# handlers file for nginx
+- name:    nginx start
+  service: name=nginx enabled=yes state=started
+- name:    nginx restart
+  service: name=nginx state=restarted
+- name:    php-fpm start
+  service: name=php-fpm enabled=yes state=started
+- name:    php-fpm restart
+  service: name=php-fpm state=restarted
+
+- name:    auditd restart
+  service: name=auditd state=restarted use=service
+- name:    reload firewalld
+  service: name=firewalld state=reloaded

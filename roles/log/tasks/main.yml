@@ -1,0 +1,25 @@
+---
+
+- name:     Install systemd-journal-gateway
+  yum:      name=systemd-journal-gateway state=present
+- name:     Create directory for remote logging
+  file:
+    path=/var/log/journal/remote
+    mode=0755
+    owner=systemd-journal-remote
+    group=systemd-journal-remote
+    state=directory
+- name:     Copy systemd-journal-remote.service files
+  copy:
+    src:    systemd-journal-remote.service
+    dest:   /etc/systemd/system/
+
+- name:     Start systemd-journal-remote
+  command:  systemctl enable systemd-journal-remote
+
+- name:     Replace auditd configuration file
+  template:
+    src:    auditd.conf.j2
+    dest:   /etc/audit/auditd.conf
+  notify:
+    - auditd restart

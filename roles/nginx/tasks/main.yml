@@ -1,0 +1,121 @@
+---
+# tasks file for nginx
+
+- name:                Install nginx
+  yum:                 name=nginx state=present
+  notify:              nginx start
+- name:                Install php72 repository
+  yum:                 name='http://rpms.remirepo.net/enterprise/remi-release-7.rpm' state=present
+- name:                Install php72 modules
+  yum:
+    enablerepo:        'remi-php72'
+    name:              ['php-cli', 'php-fpm', 'php-mysql', 'php-json', 'php-opcache', 'php-mbstring', 'php-xml', 'php-gd', 'php-curl', 'policycoreutils-python', 'python2-cryptography']
+    state:             present
+    update_cache:      yes
+  notify:              php-fpm start
+- name:                Copy conf files
+  copy:                src=files/php-fpm.conf dest=/etc/php-fpm.d/www.conf
+  notify:              php-fpm restart
+- name:                Copy nginx.conf
+  copy:                src=files/nginx.conf dest=/etc/nginx/nginx.conf
+  notify:              nginx restart
+- name:                Copy otus-project.local.conf
+  copy:                src=files/otus-project.local.conf dest=/etc/nginx/sites-available/
+  notify:              nginx restart
+- name:                Copy security.conf
+  copy:                src=files/security.conf dest=/etc/nginx/nginxconfig.io/
+  notify:              nginx restart
+- name:                Copy general.conf
+  copy:                src=files/general.conf dest=/etc/nginx/nginxconfig.io/
+  notify:              nginx restart
+- name:                Copy php_fastcgi.conf
+  copy:                src=files/php_fastcgi.conf dest=/etc/nginx/nginxconfig.io/
+  notify:              nginx restart
+- name:                Copy wordpress.conf
+  copy:                src=files/wordpress.conf dest=/etc/nginx/nginxconfig.io/
+  notify:              nginx restart
+- name:                Create symbol link sites-available to sites-enabled
+  file:                src=/etc/nginx/sites-available dest=/etc/nginx/sites-enabled state=link
+
+- name:                Detect wp install
+  stat:                path=/var/www/html/otus-project.local/wordpress/wp-config.php
+  register:            wp
+- name:                Create directory for WordPress
+  file:                path=/var/www/html/otus-project.local state=directory
+  when:                wp.stat.exists==False
+- name:                Download WordPress
+  get_url:             url=https://wordpress.org/latest.tar.gz dest=/tmp/wordpress.tar.gz validate_certs=no
+  when:                wp.stat.exists==False
+- name:                Extract WordPress
+  unarchive:           src=/tmp/wordpress.tar.gz dest=/var/www/html/otus-project.local/ copy=no owner=nginx group=nginx setype=httpd_sys_content_t
+  when:                wp.stat.exists==False
+- name:                Selinux
+  sefcontext:          target='/var/www/html/wordpress/wp-content(/.*)?' setype=httpd_sys_rw_content_t state=present
+- name:                Copy wp config file
+  copy:                src=files/wp-config.php dest=/var/www/html/otus-project.local/wordpress/wp-config.php owner=nginx group=nginx setype=httpd_sys_rw_content_t
+  when:                wp.stat.exists==False
+- name:                Apply new SELinux file context to filesystem
+  command:             restorecon -irv /var/www/html/otus-project.local/wordpress
+- name:                Set httpd_can_network_connect flag on and keep it persistent across reboots
+  seboolean:           name=httpd_can_network_connect state=yes persistent=yes
+- name:                Set httpd_can_network_connect_db flag on and keep it persistent across reboots
+  seboolean:           name=httpd_can_network_connect_db state=yes persistent=yes
+
+# SSL
+- name:                Create directories
+  file:                path=/etc/ssl/private state=directory mode=700
+- file:                path=/etc/ssl/csr state=directory
+
+- name:                Create private key
+  openssl_privatekey:
+    path:              /etc/ssl/private/nginx-test.key
+    size:              2048
+- name:                Create CSR
+  openssl_csr:
+    path:              /etc/ssl/csr/nginx-test.csr
+    privatekey_path:   /etc/ssl/private/nginx-test.key
+    country_name:      RU
+    organization_name: Otus
+    email_address:     v.melkov@gmail.com
+    common_name:       otus-project
+- name:                Generate self-signed certificate
+  openssl_certificate:
+    path:              /etc/ssl/certs/nginx-test.crt
+    privatekey_path:   /etc/ssl/private/nginx-test.key
+    csr_path:          /etc/ssl/csr/nginx-test.csr
+    provider:          selfsigned
+- name:                Generate DH Parameters with a different size (2048 bits)
+  openssl_dhparam:     path=/etc/ssl/certs/dhparam.pem size=2048
+
+  # Logging and auditing
+- name:                Install audisp-remote
+  yum:                 name=audispd-plugins state=latest
+  notify:              auditd restart
+
+- name:                Copy audisp-remote.conf file
+  copy:                src=audisp-remote.conf dest=/etc/audisp/
+  notify:              auditd restart
+
+- name:                Copy au-remote.conf file
+  copy:                src=au-remote.conf dest=/etc/audisp/plugins.d/
+  notify:              auditd restart
+
+- name:                Copy nginx.rules for auditd
+  copy:                src=nginx.rules dest=/etc/audit/rules.d/
+  notify:              auditd restart
+
+- name:                Cron job for backup html directory
+  cron:
+    name:              html backup
+    hour:              "23"
+    minute:            "0"
+    user:              root
+    job:               rsync -r /var/www/html/otus-project.local/ /var/backup/
+
+# firewalld
+- name:                Enable http
+  firewalld:           service=http permanent=yes state=enabled zone=internal
+  notify:              reload firewalld
+- name:                Enable https
+  firewalld:           service=https permanent=yes state=enabled zone=internal
+  notify:              reload firewalld

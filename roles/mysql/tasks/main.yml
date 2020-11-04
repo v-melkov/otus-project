@@ -1,0 +1,60 @@
+---
+  # установка софта
+- name:        Install Percona yum repository
+  yum:         name=https://repo.percona.com/yum/percona-release-latest.noarch.rpm state=present
+- name:        Install Percona server
+  yum:         name=Percona-Server-server-57 state=present
+- name:        mysql start
+  service:     name=mysqld state=started enabled=yes
+- name:        Install MySQL-python
+  yum:         name=MySQL-python state=present
+
+# копируем конфиги на машины и стартуем mysqld
+- name:        Copy configuration files
+  copy:        src=files/ dest=/etc/my.cnf.d/
+  notify:      mysql restart
+
+# смена временного пароля
+- name:        Detect and properly set root password
+  stat:        path=/root/.my.cnf
+  register:    r
+- name:        Get root temporary password
+  shell:       "cat /var/log/mysqld.log | grep 'root@localhost:' | awk '{print $11}'"
+  register:    tmp_root_pass
+  when:        r.stat.exists==False
+- name:        Set new password from temporary password
+  shell:       'mysql -e "SET PASSWORD = PASSWORD(''My1StrongP@ssword'');" --connect-expired-password -uroot -p"{{ tmp_root_pass.stdout }}"'
+  when:        r.stat.exists==False
+- name:        Copy my.cnf
+  copy:        src=my.cnf dest=/root/.my.cnf force=yes
+# создадим базу
+- name:        Create database
+  mysql_db:    name=wordpress state=present
+# создадим пользователя
+- name:        Create remote wp account
+  mysql_user:  name=wpuser host="192.168.110.102" password={{ mysql_password }} priv='wordpress.*:ALL' state=present
+
+# поменяем server-id
+- name:        Modify server-id
+  lineinfile:  path=/etc/my.cnf.d/01-base.cnf regexp="^server-id=0" line="server-id=1"
+  notify:      mysql restart
+
+# ежедневный бэкап базы
+- name:        Create directory for backup
+  file:        name=/var/backup state=directory
+
+- name:        Cron job for mysql dump
+  cron:
+    name:      dumpsql
+    hour:      "23"
+    minute:    "0"
+    job:       'mysqldump wordpress > "/var/backup/database.sql" --set-gtid-purged=OFF'
+
+# firewall
+- name:        Enable mysql
+  firewalld:
+    zone:      internal
+    service:   mysql
+    permanent: yes
+    state:     enabled
+    immediate: yes
